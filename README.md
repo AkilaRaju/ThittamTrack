@@ -2,100 +2,136 @@
 
 > Making Tamil Nadu budget information easier to find and understand in Tamil and English.
 
-## Problem
+ThittamTrack is a multilingual research assistant for Tamil Nadu budget publications. It is being built in stages: Week 2 delivers the LLM chat service, streaming, usage accounting and containerized API; Week 3 adds PDF ingestion, multilingual retrieval and source-grounded RAG.
 
-Journalists often spend a lot of time searching through government budget PDFs to find one figure or confirm a claim. The information may be spread across several documents, and some are available in Tamil while others are available only in English. ThittamTrack is designed to make this research easier. Users can ask a question in either language, and the system uses RAG to find relevant passages from official budget documents and generate an answer with citations.
+## Week 2 status
 
-## Who it is for
+- FastAPI `POST /chat` with validated structured JSON responses.
+- Tamil/English response-language selection (automatic Tamil-script detection or explicit language).
+- Optional source context and citation schema. The API does not invent citations when context is absent.
+- `POST /chat/stream` streams provider output as Server-Sent Events (SSE).
+- Configurable request timeout, retry with backoff and fallback model.
+- Token and estimated-cost logging; `GET /usage` aggregates totals by model.
+- Docker Compose with FastAPI and PostgreSQL + pgvector.
+- GitHub Actions runs Ruff and pytest.
 
-- Journalists reporting on Tamil Nadu government spending and public schemes.
-- Researchers and citizens who want to understand or verify information in the Tamil Nadu budget.
+**Important:** Week 2 does not yet perform PDF retrieval. Until the Week 3 parser and retriever are connected, callers must supply source context themselves. With no context, the system is instructed to report insufficient evidence.
 
-## Signature feature
+## Requirements
 
-Ask a question in Tamil or English and get an answer based on official budget documents, with source details and matching Tamil-English passages shown when available.
+- Python 3.12+
+- An OpenAI-compatible Chat Completions API key
+- Docker Desktop / Docker Engine for the Compose setup
 
-## Hardest problem (my interview story)
+## Run locally
 
-One of the biggest challenges is helping the system find the right information even when the question and the document use different languages. For example, someone might ask a question in Tamil while the relevant budget detail appears in an English PDF. The system also needs to keep track of the correct year, budget version, and page number so that answers can be checked. I plan to test retrieval with 60 questions—30 in Tamil and 30 in English—and aim for at least 85% Recall@5. I will also test whether the answers and citations are actually correct.
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements-dev.txt
+Copy-Item .env.example .env
+```
+
+Set `LLM_API_KEY` in `.env`. Keep the real `.env` out of Git.
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+API docs: http://localhost:8000/docs
+
+## Run with Docker Compose
+
+```bash
+cp .env.example .env
+# Set LLM_API_KEY in .env
+docker compose up --build
+```
+
+On Windows PowerShell, use `Copy-Item .env.example .env` instead of `cp`.
+
+The API is available at http://localhost:8000 and PostgreSQL is exposed on port 5432 for local development. Compose waits for the database health check before starting the API.
+
+## API
+
+### `POST /chat`
+
+Request:
+
+```json
+{
+  "question": "What is the revenue deficit?",
+  "language": "en",
+  "context": [
+    {
+      "document": "Interim Budget 2026-27",
+      "page": 12,
+      "language": "en",
+      "text": "Paste a verified passage here."
+    }
+  ]
+}
+```
+
+Response shape:
+
+```json
+{
+  "answer": "Answer grounded in the supplied passage.",
+  "language": "en",
+  "citations": [
+    {
+      "document": "Interim Budget 2026-27",
+      "page": 12,
+      "quote": "Paste a verified passage here."
+    }
+  ],
+  "confidence": "high",
+  "insufficient_evidence": false,
+  "model": "gpt-4o-mini"
+}
+```
+
+### `POST /chat/stream`
+
+Accepts the same request body and returns Server-Sent Events. Events have `type=token` while the model streams, followed by a validated `type=result` event and `[DONE]`.
+
+### `GET /usage`
+
+Returns successful request count, prompt/completion/total tokens, estimated USD cost and per-model totals. Usage is stored in PostgreSQL when `DATABASE_URL` is configured; otherwise an in-memory ledger is used for local development and tests.
+
+### `GET /health`
+
+Lightweight liveness endpoint that does not call the model.
+
+## Configuration
+
+See [`.env.example`](.env.example). The default model names and per-million-token rates are examples for an OpenAI-compatible provider. Change the base URL, model IDs and rates to match the provider actually used. Cost values are estimates based on provider-reported token usage, not billing statements.
+
+## Development checks
+
+```bash
+ruff check .
+pytest -q
+```
+
+## Project roadmap
+
+- **Week 1:** Repository setup, project definition, user questions and dataset inventory.
+- **Week 2:** Chat API, structured output, streaming, timeout/retry/fallback, usage tracking, Docker Compose and CI.
+- **Week 3:** Tamil/English PDF parsing, page-aware chunking, multilingual embeddings, pgvector indexing, `POST /ask` and retrieval evaluation.
+- **Later:** Cross-language recall evaluation, side-by-side Tamil/English citations, budget comparisons and journalist-reviewed fact-checking.
 
 ## Dataset
 
-| Source | Link | Documents | Pages | Licence / terms |
-|---|---|---:|---:|---|
-| Tamil Nadu Finance Department — budget publications | https://financedept.tn.gov.in/en/budget-speech | To be counted | Target: 2,500+ pages | Official government publications. Check the website's terms and copyright notices before redistributing documents or extracted content. |
+Official source: https://financedept.tn.gov.in/en/budget-speech
 
-**Planned coverage:** At least five budget years, including Tamil and English budget speeches where available, Budget Highlights, the Citizen's Guide to Budget, Interim and Revised Budget 2026–27 documents, and the Economic Survey of Tamil Nadu. I will confirm which documents and language versions are available before adding them.
-
-## 10 real questions
-
-See [docs/QUESTIONS.md](docs/QUESTIONS.md).
-
-The questions will cover Tamil questions answered using English sources, English questions answered using Tamil sources, and questions where the source and question are in the same language. I will check each question against the official documents before using it for evaluation.
-
-## Run it
-
-These are the planned commands for a Python FastAPI version of the project. They will work once the application files and dependencies are in place.
-
-```bash
-python -m venv .venv
-
-# Windows
-.venv\Scripts\activate
-
-# macOS / Linux
-source .venv/bin/activate
-
-pip install -r requirements-dev.txt
-
-# Windows
-copy .env.example .env
-
-# macOS / Linux
-cp .env.example .env
-
-uvicorn app.main:app --reload
-curl http://localhost:8000/health
-```
-
-Create `.env` from `.env.example` and add any required credentials locally. Keep API keys and passwords out of GitHub. If I choose Django or a different backend, I will update these commands to match the actual project.
-
-## How it works
-
-1. **Collect the documents:** Download budget PDFs from official sources.
-2. **Extract the text:** Read the PDF text and use OCR for scanned pages when needed.
-3. **Prepare the passages:** Split the text into smaller sections and keep details such as language, year, document name, and page number.
-4. **Find relevant information:** Use multilingual embeddings to search for passages by meaning, including across Tamil and English.
-5. **Write an answer:** Give the retrieved passages to the language model so it can answer using the available evidence.
-6. **Show the sources:** Include the document and page details so users can check the answer themselves. If the evidence is not clear, the system should say so instead of guessing.
-
-## Future updates
-
-These are features I would like to add as the project develops:
-
-- **Hybrid search:** Combine meaning-based search with keyword search to improve results for exact figures and department names.
-- **Stronger testing:** Check Tamil-to-English, English-to-Tamil, and same-language retrieval separately.
-- **Citation checks:** Test whether answers are supported by the cited passages and whether the page numbers are correct.
-- **Budget comparisons:** Make it easier to compare Interim and Revised Budget figures without mixing up years or categories.
-- **Side-by-side translations:** Show the matching Tamil and English passages together when both versions exist.
-- **Fact-checking:** Let users enter a claim and receive a provisional True, False, or Misleading assessment based on official evidence. A journalist should review the evidence before publishing.
-- **Background processing:** Process large collections of PDFs without making users wait on one long request.
-- **User accounts:** Allow journalists to sign in and save useful questions and answers.
-- **Deployment and performance testing:** Publish the application, check how quickly it responds, and estimate running costs.
-
-These are future plans, not features that are already finished. I will update this section as each feature is built and tested.
+The planned dataset covers at least five budget years, Tamil and English budget publications where available, Budget Highlights, Citizen's Guide, Interim and Revised Budget 2026–27 documents, and the Economic Survey of Tamil Nadu. See [DATASET.md](DATASET.md) for the inventory. Document page counts and source URLs must be verified against the downloaded files before reporting dataset coverage.
 
 ## Evaluation goals
 
-- Prepare 60 questions: 30 in Tamil and 30 in English.
-- Measure Recall@5 for Tamil-to-English, English-to-Tamil, and same-language retrieval.
-- Aim for at least 85% Recall@5 and report the separate results too.
-- Check answer accuracy, citation accuracy, and how the system handles questions it cannot answer from the documents.
+The planned retrieval evaluation uses 60 questions (30 Tamil and 30 English) and reports Tamil-to-English, English-to-Tamil and same-language Recall@5 separately. The target is 85%+; it is not yet a measured result.
 
 ## Live link
 
-Not available yet — planned for Week 2.
-
-## Project status
-
-The project is in the planning and setup stage. Document processing, multilingual RAG search, answers with citations, evaluation, and deployment still need to be built and tested.
+Not deployed yet.
