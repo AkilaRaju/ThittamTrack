@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 
-from app.config import Settings, get_settings
+from app.config import get_settings
 from app.db import close_database, get_usage_summary, open_database
 from app.llm import chat_completion, stream_completion
 from app.schemas import ChatRequest, ChatResponse, UsageSummary
@@ -46,6 +46,7 @@ async def chat(payload: ChatRequest, settings=SettingsDep) -> ChatResponse:
 @app.post("/chat/stream")
 async def chat_stream(payload: ChatRequest, settings=SettingsDep) -> StreamingResponse:
     """Stream model output as Server-Sent Events (SSE)."""
+
     async def events() -> AsyncIterator[str]:
         try:
             async for event in stream_completion(payload, settings):

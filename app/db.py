@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import asyncpg
@@ -50,7 +50,7 @@ async def record_usage(
     request_status: str = "success",
 ) -> None:
     row = {
-        "created_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
         "model": model,
         "prompt_tokens": max(0, prompt_tokens),
         "completion_tokens": max(0, completion_tokens),
@@ -104,8 +104,13 @@ async def get_usage_summary() -> dict[str, Any]:
         model = row["model"]
         bucket = summary["by_model"].setdefault(
             model,
-            {"requests": 0, "prompt_tokens": 0, "completion_tokens": 0,
-             "total_tokens": 0, "estimated_cost_usd": 0.0},
+            {
+                "requests": 0,
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "estimated_cost_usd": 0.0,
+            },
         )
         for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
             value = int(row[key] or 0)
