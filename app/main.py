@@ -50,11 +50,11 @@ async def chat_stream(payload: ChatRequest, settings=SettingsDep) -> StreamingRe
     async def events() -> AsyncIterator[str]:
         try:
             async for event in stream_completion(payload, settings):
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\\n\\n"
-            yield "data: [DONE]\\n\\n"
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+            yield "data: [DONE]\n\n"
         except Exception as exc:
-            safe_message = str(exc).replace("\\n", " ")[:500]
-            yield f"data: {json.dumps({'type': 'error', 'message': safe_message})}\\n\\n"
+            safe_message = str(exc).replace("\n", " ")[:500]
+            yield f"data: {json.dumps({'type': 'error', 'message': safe_message})}\n\n"
 
     return StreamingResponse(
         events(),
